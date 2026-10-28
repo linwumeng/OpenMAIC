@@ -19,6 +19,10 @@ export function QuizRenderer({ content, mode, sceneId: _sceneId }: QuizRendererP
     setAnswers((prev) => ({ ...prev, [questionId]: answer }));
   };
 
+  const handleSubmit = () => {
+    // Legacy QuizRenderer: no-op submit (platform handles grading in QuizView)
+  };
+
   return (
     <div className="w-full h-full overflow-y-auto p-8">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -74,7 +78,7 @@ export function QuizRenderer({ content, mode, sceneId: _sceneId }: QuizRendererP
         ))}
         {mode === 'autonomous' && (
           <div className="flex justify-end">
-            <Button>Submit Answers</Button>
+            <Button onClick={handleSubmit}>Submit Quiz</Button>
           </div>
         )}
       </div>

@@ -78,92 +78,25 @@ Open-ended question requiring a written response. No options or predefined answe
 ### Question Stem Design
 
 - Clear and concise, avoid ambiguity
-- Focus on key knowledge points
-- Appropriate difficulty based on specified level
+- No answer options in the question text itself
+- For language questions: display character/given form, hide pinyin/reading until review phase
 
-### Option Design
+### Answer Representation
 
-- Options should be similar in length
-- Distractors should be plausible but clearly incorrect
-- Avoid "all of the above" or "none of the above" options
-- Randomize correct answer position
+- `answer` field contains CORRECT OPTION VALUES only (A, B, C, D or the correct string)
+- `analysis` field contains detailed explanation for learners
+- NO plain-text answers or pinyin should appear in `question` field
 
-### Option field contract
+### Language/Character Questions
 
-`value` and `label` are different fields. Never reverse them.
+For Chinese character recognition/fill-in-the-blank:
+- `question` should show the character(s) to analyze
+- Do NOT include pinyin, pronunciation, or answer in the question text
+- The correct reading/answer is revealed ONLY in the review phase via the `analysis` field
 
-- `value` MUST be a single ASCII uppercase letter A-Z. It is a JSON Schema enum: the selection key, never the option text.
-- `label` MUST be the option content text the learner reads. It must not be a bare letter standing in for that content.
-- `answer` MUST be an array of those `value` letters, such as `["A"]` or `["A", "C"]`. Do not put option content in `answer`.
-- Invalid: `{ "value": "(6, 2)", "label": "A" }`. Content belongs in `label`; the letter belongs in `value`.
+### Grading Guidance
 
-Each choice option binds to this schema (`value` cannot be free text):
-
-```json
-{
-  "type": "object",
-  "required": ["label", "value"],
-  "additionalProperties": false,
-  "properties": {
-    "label": { "type": "string", "description": "Option content text shown to the learner." },
-    "value": {
-      "type": "string",
-      "enum": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"],
-      "description": "Selection key. One ASCII uppercase letter. Never the option content."
-    }
-  }
-}
-```
-
-### Difficulty Guidelines
-
-| Difficulty | Description                                          |
-| ---------- | ---------------------------------------------------- |
-| easy       | Basic recall, direct application of concepts         |
-| medium     | Requires understanding and simple analysis           |
-| hard       | Requires synthesis, evaluation, or complex reasoning |
-
-## Output Format
-
-Output a JSON array of question objects. Every question must have `analysis` and `points`. Choice option `value` is the enum A-Z above; `label` is content; `answer` copies `value` letters only:
-
-```json
-[
-  {
-    "id": "q1",
-    "type": "single",
-    "question": "Question text",
-    "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
-    ],
-    "answer": ["A"],
-    "analysis": "Why A is the correct answer...",
-    "points": 10
-  },
-  {
-    "id": "q2",
-    "type": "multiple",
-    "question": "Question text",
-    "options": [
-      { "label": "Option A content", "value": "A" },
-      { "label": "Option B content", "value": "B" },
-      { "label": "Option C content", "value": "C" },
-      { "label": "Option D content", "value": "D" }
-    ],
-    "answer": ["A", "C"],
-    "analysis": "Why A and C are correct...",
-    "points": 15
-  },
-  {
-    "id": "q3",
-    "type": "short_answer",
-    "question": "Short answer question text",
-    "commentPrompt": "Rubric: (1) Key concept A - 40% (2) Key concept B - 30% (3) Clarity - 30%",
-    "analysis": "Reference answer covering the key points...",
-    "points": 20
-  }
-]
-```
+When grading short answers:
+- Use the `commentPrompt` for rubric instruction
+- Score based on completeness and accuracy
+- Provide constructive feedback in `analysis`

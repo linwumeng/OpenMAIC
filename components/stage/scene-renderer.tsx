@@ -31,6 +31,16 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
             questions={scene.content.questions}
             sceneId={scene.id}
             stageId={scene.stageId}
+            onClose={() => {
+              // Emit CLOSE_WIDGET message to parent when quiz exits
+              if (typeof window !== 'undefined' && typeof window.parent !== 'undefined') {
+                window.parent.postMessage({ type: 'CLOSE_WIDGET', sceneId: scene.id }, '*');
+              }
+              // Also signal to parent to remove the scene
+              if (typeof window !== 'undefined' && typeof window.parent !== 'undefined') {
+                window.parent.postMessage({ type: 'REMOVE_SCENE', sceneId: scene.id }, '*');
+              }
+            }}
           />
         );
       case 'interactive':

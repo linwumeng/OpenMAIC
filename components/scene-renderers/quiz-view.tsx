@@ -13,6 +13,7 @@ import {
   BookOpenText,
   Loader2,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -50,6 +51,8 @@ interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
   readonly stageId: string;
+  readonly onClose?: () => void;
+  readonly type?: 'quiz' | 'interactive';
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -690,7 +693,7 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
+export function QuizView({ questions, sceneId, stageId, onClose }: QuizViewProps) {
   const { t, locale } = useI18n();
 
   const [phase, setPhase] = useState<Phase>('not_started');
@@ -862,7 +865,24 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
     );
   }, [attemptId, retrying, runtimeWriter, sceneId, stageId, viewLifetime]);
 
+  const handleExit = useCallback(() => {
+    onClose?.();
+  }, [onClose]);
+
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
+
+  // Escape key handler for exit
+  useEffect(() => {
+    const handleEscape = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleExit();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [handleExit]);
 
   const resultMap = useMemo(() => {
     const map: Record<string, QuestionResult> = {};
@@ -940,19 +960,30 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   / {questions.length}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={!allAnswered}
-                className={cn(
-                  'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
-                  allAnswered
-                    ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md hover:shadow-violet-200/50 dark:hover:shadow-violet-900/50 active:scale-[0.97]'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
-                )}
-              >
-                {t('quiz.submitAnswers')}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={!allAnswered}
+                  className={cn(
+                    'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
+                    allAnswered
+                      ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-sm hover:shadow-md hover:shadow-violet-200/50 dark:hover:shadow-violet-900/50 active:scale-[0.97]'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed',
+                  )}
+                >
+                  {t('quiz.submitAnswers')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExit}
+                  className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                  title={t('quiz.exitQuiz') || 'Exit quiz'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{t('quiz.exit') || 'Exit'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Questions */}
@@ -1046,15 +1077,26 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
                   {t('quiz.quizReport')}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleRetry()}
-                disabled={retrying}
-                className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {t('quiz.retry')}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRetry()}
+                  disabled={retrying}
+                  className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {t('quiz.retry')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExit}
+                  className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+                  title={t('quiz.exitQuiz') || 'Exit quiz'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{t('quiz.exit') || 'Exit'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Results */}

@@ -71,3 +71,18 @@ Generate a FUN, INTERACTIVE HTML game with these MANDATORY features:
 
 ### Output
 Return ONLY the HTML document. Make the game FUN enough that students want to play again!
+
+### Exit / Close Button (MANDATORY)
+Every game widget MUST have a persistent exit/close control so the player can never get stuck:
+- Render a visible "Exit" / "返回" / "X" button fixed to the top-right corner of the game container.
+- This button must be always-visible (not hidden behind progress bars, not part of an overlay).
+- On click, call `window.parent.postMessage({type: 'CLOSE_WIDGET'}, '*')` and/or navigate back.
+- Also support the `Escape` key as a secondary exit.
+- For quiz-style games with a linear loop, the exit button must ALSO close the entire quiz/game flow.
+
+### Achievement Badges Must Be Dismissible (MANDATORY)
+Achievement / badge popups MUST include a close/dismiss button that the player can tap at any time:
+- Add an explicit close icon (× or "关闭") in the top-right of the badge popup.
+- The badge MUST auto-dismiss AFTER 3 seconds AND must also allow immediate manual dismiss via the close button.
+- Do NOT stack multiple badges without a clear dismiss affordance.
+- Position the badge away from critical UI (progress bars, next-button) so it cannot obscure them.

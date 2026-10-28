@@ -184,26 +184,36 @@ function updateButton(text) {
   - "重新开始" / "重试" → Reset and start fresh (when ended)
 - One button should NOT do different things based on text alone
 
-### 4. Touch-Friendly Controls
+### 5. Button HTML - Match onclick to Global Function Name
+**The button's `onclick` attribute MUST exactly match the global function name.**
+
+```html
+<!-- CORRECT: onclick matches global function handleMainButton() -->
+<button id="mainBtn" onclick="handleMainButton()">启动</button>
+```
+
+**Rule**: Always verify that the function name in `onclick="..."` is the same as the one you defined globally. If you define `function handleMainButton()`, your button MUST use `onclick="handleMainButton()"`.
+
+### 6. Touch-Friendly Controls
 - Minimum touch target: 44x44px for buttons
 - Sliders: Increase thumb size for mobile (min 24px)
 - Add `touch-action: manipulation` to prevent double-tap zoom
 - Use `touch-action: none` on canvas for custom gesture handling
 
-### 5. Canvas Sizing
+### 7. Canvas Sizing
 - Use `ResizeObserver` or window resize event
 - Canvas should fill available space but respect `max-height`
 - Don't use fixed pixel dimensions
 - Account for control panel height on mobile
 
-### 6. Visual Feedback
+### 8. Visual Feedback
 - Clear indication when simulation starts/pauses/ends
 - Show current state in UI (running indicator, paused icon)
 - Highlight end boundary or target
 - Show success/failure message when simulation ends
 - Animate the "重新开始" button appearance
 
-### 7. Visible Animation (CRITICAL)
+### 9. Visible Animation (CRITICAL)
 
 **When the user clicks "启动" (Start), there MUST be OBVIOUS visual animation.**
 
@@ -244,7 +254,7 @@ function updateButton(text) {
 // User clicks "Start" → Earth visibly spins → Satisfying!
 ```
 
-### 8. Data Display
+### 10. Data Display
 - Real-time values should be clearly visible
 - Use monospace font for numbers
 - Show units consistently
@@ -267,6 +277,40 @@ function updateButton(text) {
 - Don't create objects in render loop
 - Throttle slider input events if needed
 
+### 12. Script Placement: DOMContentLoaded or End of Body
+**Either wrap the simulation script in DOMContentLoaded, or place it at the very end of body.**
+
+```html
+<!-- Option A: DOMContentLoaded wrapper -->
+<script>
+// CRITICAL: Functions called by inline onclick MUST be global,
+// not inside DOMContentLoaded's closure.
+function handleMainButton() {
+  if (state.ended) {
+    // If simulation ended, reset first
+    resetSimulation();
+  } else if (state.running) {
+    pauseSimulation();
+  } else {
+    startSimulation();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // DOM setup, event listeners, and other non-global code here
+  const canvas = document.getElementById('canvas');
+  canvas.addEventListener('click', handleCanvasClick);
+});
+</script>
+
+<!-- Option B: Script at end of body (after all elements) -->
+</body>
+<!-- No elements after this point -->
+</html>
+```
+
+**Rule**: If using `DOMContentLoaded`, critical functions referenced by inline `onclick` handlers MUST be defined outside the callback (global scope). Inline `onclick="handleMainButton()"` looks up `window.handleMainButton`; if the function is inside the DOMContentLoaded closure, it is invisible to the handler.
+
 ## Common Bugs to Avoid
 
 | Bug | Cause | Solution |
@@ -276,6 +320,7 @@ function updateButton(text) {
 | Simulation stuck | Missing `ended` state | Track `ended` separately from `running` |
 | Button does nothing | State logic error | Clear state machine with defined transitions |
 | Touch issues | Small touch targets | Min 44px touch targets, larger sliders |
+| onclick handler fails | Function not global or name mismatch | Define `handleMainButton` globally with `<button onclick="handleMainButton()">启动</button>` |
 
 ## Output Format
 

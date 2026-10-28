@@ -9,6 +9,25 @@ import {
   interactiveLibraryUrl,
 } from './interactive-libraries.js';
 
+/**
+ * Decode a percent-encoded URL path.
+ *
+ * `new URL()` percent-encodes characters that are legal in a path but not in
+ * its "path percent-encode set" — notably `^`, which is how npm-style semver
+ * ranges (`katex@^0.16.9`) are written. Rejecting every `%` in the raw path
+ * would therefore discard valid CDN URLs, so the path is decoded first and
+ * only a residual `%` (malformed or double-encoded) is refused. Traversal is
+ * still blocked because the decoded result is checked for `..` below.
+ */
+function decodePath(path: string): string | undefined {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    // A malformed escape sequence is not a path we can reason about.
+    return undefined;
+  }
+}
+
 /** Versions without a lower bound (unversioned/latest) intentionally select our pin. */
 function compatible(requested: string, version: string, policy: string): boolean {
   if (!requested || requested === 'latest') return true;
@@ -49,11 +68,15 @@ export function mapInteractiveLibraryUrl(
   let version: string;
   let file: string;
   if (url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'unpkg.com') {
-    const path =
+    const rawPath =
       url.hostname === 'cdn.jsdelivr.net'
         ? /^\/npm\/(.+)$/.exec(url.pathname)?.[1]
         : url.pathname.slice(1);
-    if (!path) return undefined;
+    if (!rawPath) return undefined;
+    const path = decodePath(rawPath);
+    if (path === undefined) return undefined;
+    // A residual `%` means the path is still encoded (or double-encoded) and
+    // cannot be compared against the hosted file list.
     if (path.includes('%')) return undefined;
     const match = /^(@[^/]+\/[^/@]+|[^/@]+)(?:@([^/]+))?(?:\/(.*))?$/.exec(path);
     if (!match) return undefined;
@@ -61,13 +84,16 @@ export function mapInteractiveLibraryUrl(
     version = match[2] ?? '';
     file = match[3] ?? '';
   } else if (url.hostname === 'cdnjs.cloudflare.com') {
-    const match = /^\/ajax\/libs\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname);
-    if (!match) return undefined;
-    const library = INTERACTIVE_LIBRARIES.find((entry) => entry.cdnjs === match[1]);
+    const rawPath = /^\/ajax\/libs\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname);
+    if (!rawPath) return undefined;
+    const path = decodePath(rawPath[3]!);
+    if (path === undefined) return undefined;
+    if (path.includes('%')) return undefined;
+    const library = INTERACTIVE_LIBRARIES.find((entry) => entry.cdnjs === rawPath[1]);
     if (!library) return undefined;
     name = library.package;
-    version = match[2]!;
-    file = match[3]!;
+    version = rawPath[2]!;
+    file = path;
     if (name === 'katex' && !file.startsWith('dist/')) file = `dist/${file}`;
     if (name === 'three' && /^three(?:\.module)?(?:\.min)?\.js$/.test(file)) file = `build/${file}`;
   } else return undefined;

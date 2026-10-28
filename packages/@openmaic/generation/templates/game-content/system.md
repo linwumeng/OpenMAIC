@@ -271,6 +271,14 @@ Output structure must be:
 
 If you catch yourself duplicating content, STOP and output only the first complete document.
 
+## REQUIRED: No Quiz Answer Leakage
+**Never place the answer/pinyin directly in the question statement.**
+
+- The question text must NOT contain the correct reading/answer in plain sight.
+- Generate separate display copy for "question" and "answer".
+- When the user is shown the question, the answer must be hidden until the player interacts.
+- For pronunciation/character games, DO NOT render the pinyin next to the character in the question area.
+
 ## Engagement Features
 
 1. **Immediate feedback**: Player knows instantly if action was right/wrong
@@ -339,15 +347,23 @@ Return ONLY the HTML document, no markdown fences or explanations.
 **Exception**: You may use basic Tailwind utility classes (like `flex`, `text-center`) directly on elements, but avoid `@layer utilities` blocks.
 
 ### 3. Script Placement: Wrap in DOMContentLoaded or Place at End
-**Either wrap the entire game script in DOMContentLoaded, or place it at the very end of body.**
+**Either wrap the game script in DOMContentLoaded, or place it at the very end of body.**
 
 ```html
 <!-- Option A: DOMContentLoaded wrapper -->
 <script>
+// CRITICAL: Functions called by inline onclick MUST be global,
+// not inside DOMContentLoaded's closure.
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  gameActive = true;
+  initLevel();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-  // All game code here - elements are guaranteed to exist
+  // DOM setup, event listeners, and other non-global code here
   const canvas = document.getElementById('gameCanvas');
-  function startGame() { ... }
+  canvas.addEventListener('click', handleCanvasClick);
 });
 </script>
 
@@ -356,6 +372,8 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- No elements after this point -->
 </html>
 ```
+
+**Rule**: If using `DOMContentLoaded`, critical functions referenced by inline `onclick` handlers MUST be defined outside the callback (global scope). Inline `onclick="startGame()"` looks up `window.startGame`; if the function is inside the DOMContentLoaded closure, it is invisible to the handler.
 
 ### 4. Global Functions for onclick Handlers
 **Functions called by inline onclick must be globally accessible.**
@@ -424,6 +442,24 @@ render(); // Render paths publish the current state, including before Start.
 ```
 
 **Avoid**: Complex dependencies like reading localStorage before events are bound, multiple async operations during init, or chained promises for game start.
+
+## REQUIRED: Exit / Back Button (NO EXCEPTIONS)
+**Every game widget MUST have a persistent exit/close control so the player can never get stuck.**
+
+- Always render a visible "Exit" / "返回" / "X" button fixed to the top-right corner of the game container.
+- This button must be always-visible (not hidden behind progress bars, not part of an overlay).
+- On click, call `window.parent.postMessage({type: 'CLOSE_WIDGET'}, '*')` and/or navigate back.
+- Also support the `Escape` key as a secondary exit.
+- For quiz-style games with a linear loop, the exit button must ALSO close the entire quiz/game flow.
+- Do NOT rely on the browser back button alone; always provide an in-widget exit button.
+
+## REQUIRED: Achievement Badges Must Be Dismissible
+**Achievement / badge popups MUST include a close/dismiss button that the player can tap at any time.**
+
+- Add an explicit close icon (× or "关闭") in the top-right of the badge popup so the player can dismiss it immediately.
+- The badge MUST auto-dismiss AFTER 3 seconds AND must also allow immediate manual dismiss via the close button.
+- Do NOT stack multiple badges without a clear dismiss affordance.
+- Position the badge away from critical UI (progress bars, next-button) so it cannot obscure them.
 
 
 {{snippet:interactive-libraries}}

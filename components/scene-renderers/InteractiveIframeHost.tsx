@@ -35,6 +35,10 @@ type InteractivePickerMessage = {
   text?: unknown;
 };
 
+type InteractiveIframeMessage =
+  | InteractivePickerMessage & { readonly errorKind?: string; readonly message?: unknown }
+  | { readonly type: 'CLOSE_WIDGET'; readonly __maicInteractive?: false };
+
 type ElementPickerMode = 'editor' | 'playback-stable-id';
 
 export function resolveInteractivePickerMode(
@@ -350,10 +354,18 @@ function PooledIframe({
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
-      const d = e.data as
-        | (InteractivePickerMessage & { errorKind?: string; message?: unknown })
-        | undefined;
-      if (!d || d.__maicInteractive !== true) return;
+      const d = e.data as InteractiveIframeMessage | undefined;
+      if (!d) return;
+
+      // Game exit buttons send CLOSE_WIDGET without the __maicInteractive flag,
+      // so handle it before the gate to prevent users from getting stuck.
+      if ('type' in d && d.type === 'CLOSE_WIDGET') {
+        useInteractiveIframePool.getState().evict(sceneId);
+        return;
+      }
+      if (!('__maicInteractive' in d) || !d.__maicInteractive) return;
+
+      // Now d is InteractivePickerMessage
       if (d.kind === 'runtime-error') {
         const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
         const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
