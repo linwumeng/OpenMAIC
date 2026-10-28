@@ -125,7 +125,7 @@ const TTS_CASES: Array<{ name: string; config: (baseUrl: string) => TTSModelConf
     config: (baseUrl) => ({
       providerId: 'lemonade-tts',
       baseUrl,
-      voice: 'af_heart',
+      voice: 'zh-CN-XiaoxiaoNeural',
       publicOnly: false,
     }),
   },

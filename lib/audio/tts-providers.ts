@@ -418,7 +418,7 @@ async function generateLemonadeTTS(
     '',
   );
   const modelId = config.modelId || TTS_PROVIDERS['lemonade-tts'].defaultModelId;
-  const voice = config.voice || 'af_heart';
+  const voice = config.voice || DEFAULT_TTS_VOICES['lemonade-tts'];
 
   const response = await ttsFetch(config, `${baseUrl}/audio/speech`, {
     method: 'POST',

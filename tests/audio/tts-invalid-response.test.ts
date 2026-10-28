@@ -97,7 +97,7 @@ describe('TTS Provider Response Validation (#1395)', () => {
         {
           providerId: 'lemonade-tts',
           baseUrl: 'http://localhost:13305/v1',
-          voice: 'af_heart',
+          voice: 'zh-CN-XiaoxiaoNeural',
         },
         'Hello',
       ),

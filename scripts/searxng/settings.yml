@@ -1,0 +1,18 @@
+# SearXNG 本地配置（OpenMAIC 专用）
+# - limiter 关闭: 内网容器调用，无需反爬
+# - json 格式: OpenMAIC 客户端走 SearXNG JSON API（GET /search?q=...&format=json）
+
+use_default_settings: true
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "openmaic-local-searxng"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

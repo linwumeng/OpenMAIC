@@ -1,0 +1,9 @@
+{
+  "name": "kokoro-tts-server",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "^3.5.1",
+    "express": "^4.21.2"
+  }
+}

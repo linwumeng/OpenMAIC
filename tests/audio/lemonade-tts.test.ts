@@ -27,7 +27,7 @@ describe('Lemonade TTS', () => {
     mockFetch.mockReset();
   });
 
-  it('posts to /audio/speech with kokoro-v1 + wav and bubble-up audio bytes', async () => {
+  it('posts to /audio/speech with edge-tts + wav and bubble-up audio bytes', async () => {
     const buffer = wavBytes();
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -39,7 +39,7 @@ describe('Lemonade TTS', () => {
       {
         providerId: 'lemonade-tts',
         baseUrl: 'http://localhost:13305/v1/',
-        voice: 'af_heart',
+        voice: 'zh-CN-XiaoxiaoNeural',
       },
       'hello world',
     );
@@ -50,9 +50,9 @@ describe('Lemonade TTS', () => {
     );
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body).toEqual({
-      model: 'kokoro-v1',
+      model: 'edge-tts',
       input: 'hello world',
-      voice: 'af_heart',
+      voice: 'zh-CN-XiaoxiaoNeural',
       speed: 1.0,
       response_format: 'wav',
     });
@@ -61,7 +61,7 @@ describe('Lemonade TTS', () => {
     expect(result.format).toBe('wav');
   });
 
-  it('falls back to af_heart when no voice is provided', async () => {
+  it('falls back to zh-CN-XiaoxiaoNeural when no voice is provided', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       arrayBuffer: async () => wavBytes(),
@@ -71,7 +71,7 @@ describe('Lemonade TTS', () => {
     await generateTTS({ providerId: 'lemonade-tts', voice: '' }, 'hi');
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.voice).toBe('af_heart');
+    expect(body.voice).toBe('zh-CN-XiaoxiaoNeural');
   });
 
   it('uses the selected voice consistently regardless of text language', async () => {
@@ -81,10 +81,10 @@ describe('Lemonade TTS', () => {
       headers: { get: () => 'audio/wav' },
     });
 
-    await generateTTS({ providerId: 'lemonade-tts', voice: 'af_heart' }, '给我讲讲 Python');
+    await generateTTS({ providerId: 'lemonade-tts', voice: 'zh-CN-XiaoxiaoNeural' }, '给我讲讲 Python');
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.voice).toBe('af_heart');
+    expect(body.voice).toBe('zh-CN-XiaoxiaoNeural');
   });
 
   it('does not require an API key (keyless provider)', async () => {
@@ -94,7 +94,7 @@ describe('Lemonade TTS', () => {
       headers: { get: () => 'audio/wav' },
     });
 
-    await generateTTS({ providerId: 'lemonade-tts', voice: 'af_heart' }, 'hi');
+    await generateTTS({ providerId: 'lemonade-tts', voice: 'zh-CN-XiaoxiaoNeural' }, 'hi');
 
     expect(mockFetch.mock.calls[0][1].headers.Authorization).toBeUndefined();
   });
@@ -106,7 +106,7 @@ describe('Lemonade TTS', () => {
       headers: { get: () => 'audio/wav' },
     });
 
-    await generateTTS({ providerId: 'lemonade-tts', apiKey: 'sk-lm', voice: 'af_heart' }, 'hi');
+    await generateTTS({ providerId: 'lemonade-tts', apiKey: 'sk-lm', voice: 'zh-CN-XiaoxiaoNeural' }, 'hi');
 
     expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe('Bearer sk-lm');
   });

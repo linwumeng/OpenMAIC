@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   openmaic:
     build:
@@ -34,9 +40,6 @@ services:
       # (for example an external DATABASE_URL) overrides the default.
       - docker-compose.defaults.env
       - .env.local
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       # The address the port above is published on, passed in so the app can
       # warn when it is published beyond loopback with the default PostgreSQL
@@ -49,9 +52,25 @@ services:
       # MP4 export disabled and degrades to the ZIP-download path — this URL
       # being set does not, by itself, advertise a working render.
       - RENDER_SERVICE_URL=http://render-service:9000
+      - ALLOW_LOCAL_NETWORKS=true
+      - PARALLEL_SCENE_CONCURRENCY=3
+      # TTS 主用：MiniMax 云端（原生 provider，key 在 .env.local 的 TTS_MINIMAX_API_KEY）
+      # 免 key 兜底：edge-tts（微软在线神经语音，默认 zh-CN-XiaoxiaoNeural）
+      # 完全离线兜底：改指 kokoro-tts（http://kokoro-tts:8004，首次启动下载 ~310MB 模型）
+      - TTS_LEMONADE_BASE_URL=http://edge-tts:8005
+      - TTS_REQUEST_TIMEOUT_MS=180000
+      # ASR 本地服务
+      - ASR_FUNASR_BASE_URL=http://funasr:26690
+      # Embedding 本地服务
+      - EMBEDDING_BASE_URL=http://embedding-service:8002
+      # PDF 本地服务
+      - PDF_MINERU_BASE_URL=http://mineru:9000
+      # Web Search
+      - SEARXNG_BASE_URL=http://searxng:8080
     networks:
-      - default # outbound internet (LLM/media provider APIs, etc.)
-      - render # reach the render service over the isolated network
+      - default
+      - local-services
+      - render
     volumes:
       # Optional: the model configuration (copy openmaic.example.yml to
       # openmaic.yml first; a missing file would be mounted as a directory).
@@ -60,6 +79,167 @@ services:
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      funasr:
+        condition: service_healthy
+      edge-tts:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+      mineru:
+        condition: service_healthy
+
+
+  # --- FunASR 本地语音识别（CPU 推理，20 核） ----------------------------------
+  funasr:
+    build:
+      context: ./scripts/funasr
+      dockerfile: Dockerfile
+    container_name: openmaic-funasr
+    environment:
+      - FUNASR_MODEL=${FUNASR_MODEL:-paraformer-zh}
+      - DEVICE=${FUNASR_DEVICE:-cpu}
+      - MODELSCOPE_CACHE=/models
+    volumes:
+      - asr-models:/models
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python3', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:26690/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # 首次启动需下载 paraformer/vad/punc 模型
+      start_period: 600s
+
+  # --- BGE-M3 本地嵌入服务（默认 CPU；可改 DEVICE=cuda:0） ---------------------
+  embedding-service:
+    build:
+      context: ./scripts/embedding-service
+      dockerfile: Dockerfile
+    container_name: openmaic-embedding
+    environment:
+      - MODEL_NAME=${EMBEDDING_MODEL:-BAAI/bge-m3}
+      - DEVICE=${EMBEDDING_DEVICE:-cpu}
+      - PORT=8002
+      - HF_HOME=/models
+      - TRANSFORMERS_OFFLINE=1
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+    volumes:
+      - ./scripts/embedding-service/models:/models:ro
+      - openmaic-data:/app/data
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python3', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
+
+  # --- MinerU 本地 PDF 解析（官方 /file_parse API） ----------------------------
+  mineru:
+    # Pinned: `latest` now ships the 4.x /v1 uploads+parse-jobs API, which has
+    # no /file_parse endpoint the app calls (lib/pdf/pdf-providers.ts).
+    image: mustangxu/mineru:3.4.5
+    container_name: openmaic-mineru
+    command: ["mineru-api", "--host", "0.0.0.0", "--port", "9000", "--allow-public-http-client"]
+    environment:
+      # modelscope 源: 首次解析时自动下载模型到 ~/.cache（卷持久化）
+      - MINERU_MODEL_SOURCE=modelscope
+      # CPU 推理（GPU 已让给 TTS；pipeline 后端 CPU 可用）
+      - MINERU_DEVICE_MODE=cpu
+    volumes:
+      - mineru-models:/root/.cache
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python3', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # --- SearXNG 本地 Web 搜索（JSON API 已启用，limiter 已关闭） ----------------
+  searxng:
+    image: searxng/searxng:latest
+    container_name: openmaic-searxng
+    environment:
+      - INSTANCE_NAME=OpenMAIC Local
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    volumes:
+      - ./scripts/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8080/healthz']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # --- Kokoro TTS (CPU, OpenAI /v1/audio/speech compatible) ---------------
+  kokoro-tts:
+    build:
+      context: ./scripts/kokoro-tts
+      dockerfile: Dockerfile
+    container_name: openmaic-kokoro-tts
+    ports:
+      - '8004:8004'
+    environment:
+      - PORT=8004
+      - MODEL=onnx-community/Kokoro-82M-v1.0-ONNX
+      - HF_ENDPOINT=https://hf-mirror.com
+      - DEFAULT_VOICE=zf_xiaoxiao
+    # transformers.js ignores HF_HOME/HF_HUB_CACHE and always caches under its
+    # own package dir; mount the volume there so the ~310MB first-start model
+    # download survives container recreation.
+    volumes:
+      - kokoro-models:/app/node_modules/@huggingface/transformers/.cache
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:8004/health', r=>{r.resume();process.exit(r.statusCode===200?0:1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # 首次启动需从 hf-mirror 下载 ~310MB 模型（卷为空时）
+      start_period: 600s
+
+  edge-tts:
+    build:
+      context: ./scripts/edge-tts
+      dockerfile: Dockerfile
+    container_name: openmaic-edge-tts
+    ports:
+      - '8005:8005'
+    environment:
+      - PORT=8005
+      - DEFAULT_VOICE=zh-CN-XiaoxiaoNeural
+    networks:
+      - local-services
+    logging: *default-logging
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python3', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8005/health');"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # PostgreSQL for the app-embedded persistence API. Started by default; the
   # app waits for its health check. Its port is not published to the host here;
@@ -161,14 +341,23 @@ services:
 
 networks:
   default: {}
-  # Isolated network for app <-> render-service traffic. `internal: true` means
-  # no route to the host or internet. Both services share it so the app can
-  # reach the render service; the render container additionally blocks its own
-  # egress (iptables, see the service's entrypoint) so the untrusted Chromium
-  # can't use this shared network to reach the app.
+  local-services:
+    name: openmaic-local-services
   render:
     internal: true
 
 volumes:
   openmaic-data:
+    name: openmaic-app-data
   openmaic-postgres:
+    name: openmaic-postgres
+  searxng-config:
+    name: openmaic-searxng-config
+  asr-models:
+    name: openmaic-asr-models
+  embedding-models:
+    name: openmaic-embedding-models
+  mineru-models:
+    name: openmaic-mineru-models
+  kokoro-models:
+    name: openmaic-kokoro-models
