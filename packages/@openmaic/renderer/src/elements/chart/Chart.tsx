@@ -98,9 +98,20 @@ export function Chart({
         setChartState('ready');
         updateOptionRef.current();
 
-        const resizeObserver = new ResizeObserver(() => {
-          chartInstance.current?.resize();
-        });
+        // Throttle resize() to one call per frame to avoid re-entrant
+        // ResizeObserver loops ("loop completed with undelivered
+        // notifications"). Deferring into rAF and re-checking that the
+        // instance still owns the element before calling resize() breaks the loop.
+        let resizeFrame = 0;
+        const scheduleResize = () => {
+          if (resizeFrame) return;
+          resizeFrame = requestAnimationFrame(() => {
+            resizeFrame = 0;
+            if (chartInstance.current) chartInstance.current.resize();
+          });
+        };
+
+        const resizeObserver = new ResizeObserver(scheduleResize);
         resizeObserver.observe(chartRef.current);
         resizeObserverRef.current = resizeObserver;
       })

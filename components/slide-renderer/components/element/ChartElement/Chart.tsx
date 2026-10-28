@@ -96,12 +96,26 @@ export function Chart({
     });
     updateOption();
 
-    const resizeObserver = new ResizeObserver(() => {
-      chartInstance.current?.resize();
-    });
+    // Throttle resize() to one call per frame and guard against re-entrant
+    // resize loops. A ResizeObserver callback that itself resizes an observed
+    // element can re-trigger the observer synchronously, which surfaces in
+    // the console as "ResizeObserver loop completed with undelivered
+    // notifications". Deferring into rAF and re-checking that the instance
+    // still owns the element before calling resize() breaks the loop.
+    let resizeFrame = 0;
+    const scheduleResize = () => {
+      if (resizeFrame) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        if (chartInstance.current) chartInstance.current.resize();
+      });
+    };
+
+    const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(chartRef.current);
 
     return () => {
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
       resizeObserver.disconnect();
       chartInstance.current?.dispose();
       chartInstance.current = null;

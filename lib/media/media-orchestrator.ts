@@ -671,7 +671,15 @@ async function generateSingleMedia(
     const message = err instanceof Error ? err.message : String(err);
     const errorCode = mediaFailureCode(err);
     log.error(`Failed ${req.elementId}:`, message);
-    useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
+
+    // Ensure task exists before marking failed
+    const store = useMediaGenerationStore.getState();
+    const task = store.getTask(req.elementId);
+    if (!task) {
+      store.enqueueTasks(stageId, [req]);
+    }
+
+    store.markFailed(req.elementId, message, errorCode);
 
     // Bytes a full store refused. They are kept, and the record below is
     // written around them rather than over them: for a course being converted
