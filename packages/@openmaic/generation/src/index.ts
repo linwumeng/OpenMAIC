@@ -7,6 +7,7 @@ export type {
 } from './pipeline-types.js';
 
 export {
+  clampAndValidateSlideElements,
   extractInteractiveElements,
   extractWidgetConfig,
   generateSceneActions,
@@ -15,6 +16,13 @@ export {
   PBLGenerationError,
   resolveImageIds,
 } from './scene-generator.js';
+export {
+  applySlideLayerOrder,
+  normalizeSlideLayout,
+  SLIDE_CANVAS_WIDTH,
+  SLIDE_CANVAS_HEIGHT,
+} from './slide-layout.js';
+export type { SlideLayoutResult } from './slide-layout.js';
 export type {
   SceneActionsOptions,
   SceneContentFailure,

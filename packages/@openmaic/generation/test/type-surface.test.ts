@@ -29,6 +29,7 @@ type _SceneContentKeys = Assert<
     | 'editDirective'
     | 'baselineContent'
     | 'pblLoopFallback'
+    | 'maxVisionImages'
     | 'onFailure'
     | 'logger'
   >

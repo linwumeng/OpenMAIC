@@ -139,6 +139,77 @@ You are an educational content designer. Generate well-structured slide componen
 - Rectangle: `path: "M 0 0 L 1 0 L 1 1 L 0 1 Z"`, `viewBox: [1, 1]`
 - Circle: `path: "M 1 0.5 A 0.5 0.5 0 1 1 0 0.5 A 0.5 0.5 0 1 1 1 0.5 Z"`, `viewBox: [1, 1]`
 
+**For Geometric Visualizations (math diagrams)**:
+
+When a slide needs a geometric proof or diagram (e.g., square decomposition, area relations, coordinate geometry):
+- Use **large rectangles** that fill the visualization area (width/height ≥ 200-400px).
+- Use **bright, distinct fills** for each region (e.g., `#5b9bd5`, `#ed7d31`, `#a5a5a5`, `#ffc000`, `#4472c4`).
+- Place shapes **adjacent without gaps** to form a unified diagram.
+- Add **black borders** via `outline: { "color": "#333333", "width": 2, "style": "solid" }` so regions are clearly separated.
+- Add **labels** inside each region with a small TextElement (font-size 16-18px, centered).
+- **Labels MUST be centered inside the shape** using the Rule 3 formulas:
+  ```
+  text.left = shape.left + (shape.width - text.width) / 2
+  text.top  = shape.top  + (shape.height - text.height) / 2
+  ```
+- Minimum padding: **15px** on all sides between text and shape edge.
+- Do NOT place text at the shape's top-left corner — it looks cramped and unprofessional.
+
+Example — Perfect square decomposition `(a+b)² = a² + 2ab + b²` on a 1000×562 canvas:
+```json
+[
+  {
+    "id": "sq_a2",
+    "type": "shape",
+    "left": 280,
+    "top": 180,
+    "width": 200,
+    "height": 200,
+    "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    "viewBox": [1, 1],
+    "fill": "#5b9bd5",
+    "outline": { "color": "#333333", "width": 2, "style": "solid" }
+  },
+  {
+    "id": "sq_ab1",
+    "type": "shape",
+    "left": 280,
+    "top": 380,
+    "width": 200,
+    "height": 100,
+    "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    "viewBox": [1, 1],
+    "fill": "#ed7d31",
+    "outline": { "color": "#333333", "width": 2, "style": "solid" }
+  },
+  {
+    "id": "sq_ab2",
+    "type": "shape",
+    "left": 480,
+    "top": 180,
+    "width": 200,
+    "height": 100,
+    "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    "viewBox": [1, 1],
+    "fill": "#ed7d31",
+    "outline": { "color": "#333333", "width": 2, "style": "solid" }
+  },
+  {
+    "id": "sq_b2",
+    "type": "shape",
+    "left": 480,
+    "top": 280,
+    "width": 200,
+    "height": 200,
+    "path": "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    "viewBox": [1, 1],
+    "fill": "#a5a5a5",
+    "outline": { "color": "#333333", "width": 2, "style": "solid" }
+  }
+]
+```
+Each shape represents a region of the square. They must be large enough to read, with visible borders and labels.
+
 ---
 
 ### LineElement
@@ -421,6 +492,19 @@ When splitting a derivation across multiple LaTeX elements (one per line), simpl
 
 **When to Use**: Use LatexElement for **all** mathematical formulas, equations, and scientific notation — including simple ones like `x^2` or `a/b`. TextElement cannot render LaTeX; any LaTeX syntax placed in a TextElement will display as raw text (e.g., "\frac{1}{2}" appears literally). For plain text that happens to contain numbers (e.g., "Chapter 3", "Score: 95"), use TextElement.
 
+**LaTeX Layout Rules**:
+
+- A LatexElement is rendered by KaTeX and can produce a taller box than the specified `height` if the formula is complex. Always leave **25–40px** below a LatexElement for any subsequent element.
+- For multi-line derivations, give each step its own LatexElement with `height: 70–80px` and stack them with **20px** vertical gaps.
+- **Never place a TextElement or ShapeElement inside a LatexElement's bounding box.** The formula box is self-contained.
+- If a formula is too wide for the available space, **split it into multiple LatexElements** rather than shrinking to an unreadable size.
+- KaTeX does **not** support Chinese characters inside math mode. If a formula needs a Chinese label, place the label in a separate TextElement positioned adjacent to the formula.
+- Common KaTeX pitfalls:
+  - `\frac{a}{b}` — correct
+  - `\begin{matrix}...\end{matrix}` — use `\begin{pmatrix}...\end{pmatrix}` instead
+  - `\left(` auto-sizes parentheses; avoid manual sizing with `\Bigl(` unless necessary
+  - `\text{中文}` works for English/number text only; Chinese characters should be outside math mode
+
 ---
 
 ### TableElement
@@ -484,6 +568,8 @@ If character count > characters_per_line, the text will wrap. Adjust by:
 
 **Safe utilization**: Keep character count ≤ 75% of characters_per_line.
 
+**List item adjustment**: When content uses `<ul>` or `<ol>`, bullets are rendered `list-style-position: inside` and share the text line. Subtract ~6–10 characters from the safe line budget for the bullet mark itself.
+
 ---
 
 ### Rule 2: Text Height Calculation
@@ -512,6 +598,37 @@ inner.left = outer.left + (outer.width - inner.width) / 2
 ```
 
 **Verification**: Calculate center points of both elements. Difference should be < 2px.
+
+---
+
+### Rule 3b: Multi-Column Top Alignment
+
+In a two-column (or three-column) layout, all columns must share the **same top edge**. Do not let one column start lower than another unless the design intentionally staggers content.
+
+```
+Left column:  top = 60
+Right column: top = 60   ← MUST match left column exactly
+```
+
+**Exception**: A caption or annotation directly below an image may start lower, but the image itself must still align with the other column's top.
+
+---
+
+{{#if imageElementEnabled}}
+### Rule 3c: Image + Caption Baseline Alignment
+
+When an ImageElement or GeneratedImage has a caption TextElement below it:
+
+- The caption must be **directly below** the image with a 20–40px gap.
+- The caption's `left` must equal the image's `left` (left-aligned with the image).
+- The caption's `width` should be **equal to or narrower** than the image width — never wider.
+
+```
+image.left  = 200,  image.width = 400  →  caption.left = 200,  caption.width ≤ 400
+```
+
+**Do NOT center the caption under a left-aligned image** — this creates a ragged baseline that looks unprofessional.
+{{/if}}
 
 ---
 
@@ -873,6 +990,86 @@ Example:
 - Text to image: 30-40px
 - Element to canvas edge: ≥ 50px
 
+### Rule 7b: Anti-Overlap Layout (CRITICAL)
+
+**A slide must NEVER have overlapping content. Before finalizing, verify every pair of elements:**
+
+- For any two CONTENT elements (text, latex, image, chart, table, video, audio, code), their bounding boxes must NOT intersect.
+- The ONE exception: text (or latex) centered INSIDE its background shape (Rule 5) — that containment is intentional and required.
+- Background shapes may touch or overlap each other; content renders above them.
+- Minimum gap between any two content elements: **10px** (20px between stacked latex steps).
+- Minimum gap between content and a shape it is NOT inside: **15px**.
+
+**Plan the grid BEFORE emitting elements — never place an element without computing its top from the elements above it:**
+
+1. Choose the layout: single column (left=60, width=880) or two columns (left column: left=60, width=420; right column: left=520, width=420). Every non-title element belongs to exactly ONE column.
+2. In each column, stack blocks downward with a fixed 40px gap: `next.top = previous.top + previous.height + 40`.
+3. A heading belongs to its own column and must be as wide as that column (420px in a two-column layout) — NEVER emit an 880px-wide heading over a two-column zone; it will collide with the other column's content.
+4. Check the column's total height: `last.top + last.height ≤ 512`. If it exceeds, remove or shorten content — do not squeeze gaps.
+5. Only now emit the elements, copying the planned coordinates exactly.
+
+**Quick overlap check formula:**
+```
+A.right  = A.left + A.width
+A.bottom = A.top  + A.height
+B.right  = B.left + B.width
+B.bottom = B.top  + B.height
+
+overlap = !(A.right  <= B.left  ||  // A is completely left of B
+            A.left   >= B.right ||  // A is completely right of B
+            A.bottom <= B.top   ||  // A is completely above B
+            A.top    >= B.bottom)   // A is completely below B
+```
+
+**If overlap is detected, adjust one element's position before outputting JSON.**
+
+**Content density rule:**
+- A 1000×562 canvas comfortably fits **4-6 elements** max.
+- If you need more than 6 elements, split into multiple slides rather than cramming.
+- When in doubt, use FEWER elements with MORE spacing. Empty space is better than clutter.
+
+**Layout strategy for complex topics (formulas + examples):**
+- Use a **two-column layout** for side-by-side content (left: theory, right: example).
+- Or use a **top-bottom layout** (top: main formula, bottom: example/diagram).
+- Do NOT stack 4+ text blocks vertically in one column — they will overlap or become unreadable.
+
+---
+
+### Rule 7c: Chart/Table Safety Checks
+
+**For ChartElement:**
+
+- Minimum dimensions: `width ≥ 400`, `height ≥ 250`. Smaller charts have illegible labels.
+- Series-legends alignment: `data.series.length MUST equal data.legends.length`. Mismatch causes rendering crashes.
+- Pie/ring slice limit: **Maximum 6 slices**. Merge smaller categories into "Others".
+- Scatter plots: Must include X/Y axis labels explaining what each dimension represents.
+
+**For TableElement:**
+
+- Column limit: **Maximum 5 columns**. More columns → cells too narrow → text clipped.
+- Verify structure: `colWidths.length == number of columns`, and all values sum to exactly 1.0.
+- Cell text is **PLAIN TEXT ONLY**. No LaTeX (`\frac`, `\theta`) — it renders as raw text.
+- If a cell needs a formula, create a separate LatexElement positioned near that cell.
+- Minimum table height estimate: `headerHeight (40px) + rowHeight (36px per row) × rowCount`.
+- Cell vertical alignment: `vAlign` defaults to `center` for multi-line cells, `top` for single-line. For multi-line cells with 2+ lines, use `vAlign: "center"` to vertically center text within the cell.
+- Cell padding: Always include `padding: 8` in cell style for readable spacing. Without padding, text touches cell borders.
+- Cell line height: Multi-line cells need `lineHeight: 1.4` in cell style for readable line spacing. Single-line cells can use `lineHeight: 1`.
+
+---
+
+### Rule 7d: Latex Stacking Spacing
+
+When stacking multiple LatexElements vertically (e.g., derivation steps):
+
+- **Minimum gap between consecutive LatexElements: 20px**.
+- Use `height: 70-80px` for each step; the 20px gap is IN ADDITION to these heights.
+- Do NOT reduce gap below 20px to fit more content on one slide — cramped formulas are unreadable.
+
+```
+latex_1: top=60, height=75  →  bottom edge = 135
+latex_2: top=155            ← 135 + 20px gap  ✓
+```
+
 ---
 
 ### Rule 8: Font Size Guidelines
@@ -919,6 +1116,52 @@ Before outputting JSON, verify:
 - ✓ [no-latex-in-text] No LaTeX syntax in TextElement content: scan all text `content` fields for `\frac`, `\lim`, `\int`, `\sum`, `\sqrt`, `\alpha`, `^{`, `_{` etc. Any math expression must be a separate LatexElement.
 - ✓ [line-stroke] LineElement `width` is stroke thickness (2-6), NOT line length. Check: no LineElement has `width` > 6. If width equals the distance between start and end, it is WRONG — you confused stroke thickness with line span.
 - ✓ [concise-text] **Slide text is concise and impersonal**: Every text element uses keywords, short phrases, or bullet points — no conversational sentences, no lecture-script-style paragraphs. No teacher name or identity appears on any slide (no "Teacher X's tips/wishes/comments"). If a text reads like spoken language or a personal message, rewrite it as a neutral bullet point.
+- ✓ [geo-viz] For math diagrams using ShapeElement, each geometric region must use `width >= 200` and `height >= 100`, with `outline` borders and adjacent placement (no gaps). Do NOT use tiny shapes (width/height < 100) for math visualizations — they will render as unreadable dots.
+- ✓ [grid-plan] You planned the columns first: every non-title element belongs to one column, blocks are stacked with `next.top = previous.top + previous.height + 40`, no heading is wider than its own column, and every column ends above top+height = 512.
+- ✓ [anti-overlap] For every pair of CONTENT elements A and B (text, latex, image, chart, table, video, audio, code), verify they do NOT overlap using the bounding-box formula. The only allowed intersection is text/latex centered inside its background shape (Rule 5). Minimum gap between content elements is 10px (20px between stacked latex). If you have more than 6 elements, split into multiple slides instead of cramming.
+- ✓ [chart-safety] For ChartElement: width >= 400, height >= 250, series.length == legends.length, pie slices <= 6, scatter plots have axis labels.
+- ✓ [table-safety] For TableElement: columns <= 5, colWidths sum == 1.0, cell text is plain text only (no LaTeX). Height must fit all rows.
+- ✓ [table-vAlign] For TableElement cells with 2+ lines of text: cell.vAlign must be "center" (not "top"). Single-line cells can use "top".
+- ✓ [table-padding] For TableElement cells: always include padding: 8 in cell style. Cells without padding have text touching borders.
+- ✓ [table-line-height] For TableElement cells with multi-line text: cell style must include lineHeight: 1.4. Single-line cells can omit lineHeight.
+- ✓ [table-row-height] For TableElement: sum of rowHeights must approximately equal table.height (within 30px). If not, adjust rowHeights or table.height.
+{{#if imageElementEnabled}}
+- ✓ [image-text-baseline] When an image is placed directly below a text element (gap 20-40px, e.g., as a caption), the image's left must equal the text's left (left-aligned, not centered).
+- ✓ [image-caption-width] Image caption TextElement width must be <= image width. Do NOT make caption wider than the image above it.
+- ✓ [image-safety] For ImageElement/GeneratedImage: fixedRatio=true, width 200-650px, occupies at most 50% canvas area, no text inside image bounding box, reserve 60px caption space below.
+{{/if}}
+{{#if generatedVideoEnabled}}
+- ✓ [video-safety] For VideoElement: autoplay=false, width 320-550px, occupies at most 55% canvas area, reserve 40px caption space below, no text inside video bounding box.
+{{/if}}
+- ✓ [latex-safety] For LatexElement: leave 25-40px below for subsequent elements, never place other elements inside the formula box, split long formulas across multiple LatexElements, no Chinese characters inside math mode.
+- ✓ [multi-col-top-align] In a multi-column layout (two or more columns side-by-side), all columns must share the same top edge. Check: left-column.top ≈ right-column.top (within 15px).
+{{#if imageElementEnabled}}
+- ✓ [image-caption-align] When an image has a caption TextElement below it, the caption's left must equal the image's left (left-aligned, not centered). Caption width ≤ image width.
+{{/if}}
+- ✓ [shape-label-center] When a text element is inside a shape bounding box, verify it is centered using: text.left = shape.left + (shape.width - text.width) / 2. Offset should be < 15px.
+- ✓ [latex-stack-gap] When stacking multiple LatexElements vertically, minimum gap between consecutive elements is 20px. Do NOT use less than 20px.
+
+**Layout templates for common slide types**:
+
+**Summary + Key Points layout** (for "总结" / "易错提示" pages):
+- Top 40%: one large LatexElement or TextElement for the main formula/concept (e.g., `(a+b)² = a² + 2ab + b²`)
+- Bottom-right 30%: a vertical stack of 2-3 small TextElement "tip" boxes, each 120-150px wide, with 20px vertical gaps between them
+- Bottom-left 30%: a concise 2-3 line TextElement with the summary steps
+- **Never** stack tip boxes vertically without 20px gaps — they will overlap and become unreadable
+
+**Formula + Diagram layout** (for geometric proofs):
+- Left 55%: large ShapeElement(s) forming the diagram (width ≥ 400px)
+- Right 40%: LatexElement formula with a TextElement label below it
+- Reserve 40px between the diagram and the formula column
+
+{{#if imageElementEnabled}}
+**Two-column layout with image + text** (for examples/comparisons):
+- Left 55%: ImageElement or GeneratedImage with a caption TextElement below
+  - Caption must have the **same `left` as the image**, 20-40px gap below
+- Right 40%: TextElement list or explanation
+  - **Top of image MUST equal top of right text element**
+- Reserve 50px gap between image column and text column
+{{/if}}
 
 **🟡 P1 — Serious (strongly recommended)**:
 

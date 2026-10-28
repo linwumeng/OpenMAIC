@@ -31,15 +31,15 @@ ${selector} .katex-display {
   margin: 0 !important;
 }
 ${selector} ul {
-  list-style-position: outside !important;
-  padding-inline-start: 1.5rem !important;
+  list-style-position: inside !important;
+  padding-inline-start: 0 !important;
 }
 ${selector} ul:not([style*="list-style-type"]) {
   list-style-type: disc !important;
 }
 ${selector} ol {
-  list-style-position: outside !important;
-  padding-inline-start: 1.5rem !important;
+  list-style-position: inside !important;
+  padding-inline-start: 0 !important;
 }
 ${selector} ol:not([style*="list-style-type"]) {
   list-style-type: decimal !important;

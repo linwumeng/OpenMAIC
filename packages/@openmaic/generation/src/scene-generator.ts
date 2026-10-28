@@ -19,6 +19,7 @@ import type {
 } from '@openmaic/dsl';
 import { isWidgetType, normalizeElement, safeKatexOptions } from '@openmaic/dsl';
 import { MAX_VISION_IMAGES } from './constants.js';
+import { applySlideLayerOrder, normalizeSlideLayout } from './slide-layout.js';
 import {
   formatImageDescription,
   formatImagePlaceholder,
@@ -119,6 +120,12 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  /**
+   * Deployment-overridable vision-image budget. The app's scene-content step
+   * pre-resolves its slice at this cap; the generator's own re-slice must use
+   * the same number or it would drop images the step already resolved.
+   */
+  maxVisionImages?: number;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -300,6 +307,7 @@ export async function generateSceneContent(
         baselineContent,
         log,
         options.onFailure,
+        options.maxVisionImages,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
@@ -630,6 +638,253 @@ function processLatexElements(
 }
 
 /**
+ * Post-process slide elements: clamp to canvas bounds, enforce per-type size
+ * limits, and remove obviously-overlapping elements to keep the canvas readable.
+ *
+ * This is a defensive pass over model-generated JSON. It logs warnings but never
+ * throws — a slide with clamped/removed elements is better than a broken one.
+ */
+export function clampAndValidateSlideElements(
+  elements: GeneratedSlideData['elements'],
+  _assignedImages?: PdfImage[],
+  log: GenerationLogger = noopGenerationLogger,
+): GeneratedSlideData['elements'] {
+  const CANVAS_W = 1000;
+  const CANVAS_H = 562.5;
+  const MARGIN = 50;
+
+  // Per-type size constraints
+  const MIN_W: Record<string, number> = {
+    text: 60,
+    image: 200,
+    shape: 20,
+    line: 10,
+    chart: 400,
+    table: 200,
+    latex: 60,
+    video: 320,
+    audio: 120,
+    code: 200,
+  };
+  const MAX_W: Record<string, number> = {
+    text: 900,
+    image: 650,
+    shape: 900,
+    line: 900,
+    chart: 950,
+    table: 900,
+    latex: 900,
+    video: 550,
+    audio: 900,
+    code: 900,
+  };
+  const MIN_H: Record<string, number> = {
+    text: 30,
+    image: 80,
+    shape: 10,
+    line: 10,
+    chart: 250,
+    table: 60,
+    latex: 30,
+    video: 120,
+    audio: 30,
+    code: 60,
+  };
+  const MAX_H: Record<string, number> = {
+    text: 600,
+    image: 650,
+    shape: 600,
+    line: 600,
+    chart: 600,
+    table: 600,
+    latex: 400,
+    video: 450,
+    audio: 600,
+    code: 600,
+  };
+
+  // Type-count caps to prevent overcrowding
+  const MAX_PER_TYPE: Record<string, number> = {
+    text: 8,
+    image: 3,
+    shape: 6,
+    line: 8,
+    chart: 2,
+    table: 2,
+    latex: 6,
+    video: 2,
+    audio: 2,
+    code: 1,
+  };
+
+  let counts: Record<string, number> = {};
+
+  let kept = elements
+    .map((el) => {
+      const type = el.type as string;
+      counts[type] = (counts[type] || 0) + 1;
+
+      // Enforce per-type count cap — drop extras beyond the limit
+      if ((MAX_PER_TYPE[type] ?? 6) > 0 && counts[type] > (MAX_PER_TYPE[type] ?? 6)) {
+        log.warn(
+          `Dropping excess ${type} element (cap ${MAX_PER_TYPE[type] ?? 6}): ${el.id}`,
+        );
+        return null;
+      }
+
+      const w = typeof el.width === 'number' ? el.width : 0;
+      const h = typeof el.height === 'number' ? el.height : 0;
+      const l = typeof el.left === 'number' ? el.left : 0;
+      const t = typeof el.top === 'number' ? el.top : 0;
+
+      // Clamp dimensions to per-type min/max
+      const minW = MIN_W[type] ?? 40;
+      const maxW = MAX_W[type] ?? 900;
+      const minH = MIN_H[type] ?? 30;
+      const maxH = MAX_H[type] ?? 600;
+
+      const clampedW = Math.max(minW, Math.min(w, maxW));
+      const clampedH = Math.max(minH, Math.min(h, maxH));
+
+      // Clamp position to canvas bounds
+      const clampedLeft = Math.max(MARGIN, Math.min(l, CANVAS_W - MARGIN - clampedW));
+      const clampedTop = Math.max(MARGIN, Math.min(t, CANVAS_H - MARGIN - clampedH));
+
+      // Warn on clamping so the team can tune prompt guidance
+      if (clampedLeft !== l || clampedTop !== t || clampedW !== w || clampedH !== h) {
+        log.warn(
+          `Clamped ${type} element ${el.id}: pos(${l},${t})->(${clampedLeft},${clampedTop}), size(${w},${h})->(${clampedW},${clampedH})`,
+        );
+      }
+
+      return { ...el, left: clampedLeft, top: clampedTop, width: clampedW, height: clampedH };
+    })
+    .filter((el): el is NonNullable<typeof el> => el !== null);
+
+  // Overlap + containment repair: snap content into its background card,
+  // push real conflicts apart with clearance, re-clamp to the canvas. Unlike
+  // the historical pass this never deletes an element — a readable slide
+  // with a slightly moved block beats one whose content vanished.
+  const layout = normalizeSlideLayout(kept, log);
+  kept = layout.elements;
+
+  // Additional alignment checks before returning
+  // 1. Multi-column top alignment: if multiple elements share similar left positions, they should have the same top
+  type SlideElement = GeneratedSlideData['elements'][number];
+  const columns: Map<number, Array<{ idx: number; el: SlideElement }>> = new Map();
+  for (let i = 0; i < kept.length; i++) {
+    const colKey = Math.round(kept[i].left / 100) * 100; // Group elements within 100px horizontally
+    if (!columns.has(colKey)) columns.set(colKey, []);
+    columns.get(colKey)!.push({ idx: i, el: kept[i] });
+  }
+
+  // Check each column for top alignment consistency
+  for (const [colKey, elements] of columns.entries()) {
+    if (elements.length < 2) continue;
+    const tops = elements.map(e => e.el.top);
+    const minTop = Math.min(...tops);
+    const maxTop = Math.max(...tops);
+    if (maxTop - minTop > 15) {
+      log.warn(
+        `Column at x≈${colKey} has inconsistent top alignment: range ${minTop}-${maxTop} (${maxTop - minTop}px gap). Expected alignment within 15px.`,
+      );
+    }
+  }
+
+  // 2. Shape internal text centering check: if there's a text element inside a shape bounding box, verify centering
+  for (let i = 0; i < kept.length; i++) {
+    const textEl = kept[i];
+    if (textEl.type !== 'text') continue;
+
+    for (let j = 0; j < kept.length; j++) {
+      if (i === j) continue;
+      const shapeEl = kept[j];
+      if (shapeEl.type !== 'shape') continue;
+
+      // Check if text is inside shape bounding box
+      const textCenterX = textEl.left + textEl.width / 2;
+      const textCenterY = textEl.top + textEl.height / 2;
+      const shapeLeft = shapeEl.left;
+      const shapeRight = shapeEl.left + shapeEl.width;
+      const shapeTop = shapeEl.top;
+      const shapeBottom = shapeEl.top + shapeEl.height;
+
+      if (textCenterX >= shapeLeft && textCenterX <= shapeRight &&
+          textCenterY >= shapeTop && textCenterY <= shapeBottom) {
+        // Text is inside shape, verify centering
+        const expectedTextLeft = shapeEl.left + (shapeEl.width - textEl.width) / 2;
+        const expectedTextTop = shapeEl.top + (shapeEl.height - textEl.height) / 2;
+        const offsetX = Math.abs(textEl.left - expectedTextLeft);
+        const offsetY = Math.abs(textEl.top - expectedTextTop);
+
+        if (offsetX > 15 || offsetY > 15) {
+          log.warn(
+            `Text element ${textEl.id} appears to be inside shape ${shapeEl.id} but is not properly centered: offset (${Math.round(offsetX)}px, ${Math.round(offsetY)}px). Expected near (${Math.round(expectedTextLeft)}, ${Math.round(expectedTextTop)}).`,
+          );
+        }
+      }
+    }
+  }
+
+  // 3. Table row height consistency check: if rowHeights array exists, verify it sums to approximately table.height
+  for (let i = 0; i < kept.length; i++) {
+    const el = kept[i];
+    if (el.type !== 'table') continue;
+
+    const tableEl = el as PPTElement & { data?: unknown; rowHeights?: number[]; cellMinHeight?: number };
+    const rowHeights = tableEl.rowHeights;
+    const cellMinHeight = tableEl.cellMinHeight ?? 40;
+    const numCols = tableEl.data && Array.isArray(tableEl.data) && tableEl.data[0]
+      ? tableEl.data[0].length
+      : 0;
+    const numRows = Array.isArray(tableEl.data) ? tableEl.data.length : 0;
+
+    if (rowHeights && Array.isArray(rowHeights) && rowHeights.length > 0) {
+      const totalRowHeight = rowHeights.reduce((sum, h) => sum + h, 0);
+      const expectedTotal = rowHeights.length * cellMinHeight;
+      const diff = Math.abs(totalRowHeight - el.height);
+
+      if (diff > 30) {
+        log.warn(
+          `Table ${el.id} rowHeights sum (${totalRowHeight}px) differs significantly from table.height (${el.height}px), difference: ${Math.round(diff)}px. Consider adjusting rowHeights or cellMinHeight.`,
+        );
+      }
+    }
+  }
+
+  // 4. Image + caption baseline alignment: if an image is below a text element, check left alignment
+  for (let i = 0; i < kept.length; i++) {
+    const textEl = kept[i];
+    if (textEl.type !== 'text') continue;
+
+    for (let j = 0; j < kept.length; j++) {
+      if (i === j) continue;
+      const imgEl = kept[j];
+      if (imgEl.type !== 'image') continue;
+
+      // Check if image is directly below text (gap 20-40px)
+      const textBottom = textEl.top + textEl.height;
+      const gap = imgEl.top - textBottom;
+
+      if (gap >= 20 && gap <= 40) {
+        // Image is likely a caption below text, verify left alignment
+        const leftDiff = Math.abs(imgEl.left - textEl.left);
+        if (leftDiff > 15) {
+          log.warn(
+            `Image ${imgEl.id} appears to be a caption below text ${textEl.id} but left edges are misaligned: text.left=${textEl.left}, image.left=${imgEl.left}, diff=${Math.round(leftDiff)}px. Caption should be left-aligned with its text.`,
+          );
+        }
+      }
+    }
+  }
+
+  // 5. Reorder elements by layer priority to prevent color blocks from covering text.
+  // Render order: shapes (bottom) → images → lines → charts/tables/videos/code → latex → text (top)
+  // This ensures that even if the LLM outputs text before shapes, shapes render underneath.
+  return applySlideLayerOrder(kept);
+}
+
+/**
  * Generate slide content
  */
 async function generateSlideContent(
@@ -646,6 +901,7 @@ async function generateSlideContent(
   baselineContent?: GeneratedSlideContent,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
+  maxVisionImages: number = MAX_VISION_IMAGES,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -664,7 +920,7 @@ async function generateSlideContent(
     const { sorted, visionSlice, textOnlySlice, noSrcImages } = partitionImagesForVision(
       assignedImages,
       imageMapping,
-      MAX_VISION_IMAGES,
+      maxVisionImages,
     );
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
@@ -793,6 +1049,7 @@ async function generateSlideContent(
       `You are EDITING this existing slide, not creating a new one from scratch.${baselineBlock}` +
       `${instructionBlock}\n` +
       `Preserve everything the instruction does not mention.${imageRule} ` +
+      `Copy the baseline's coordinates (left/top/width/height) VERBATIM for every element you keep — do not re-estimate positions you were not asked to move. When the instruction does move or add an element, keep its box clear of every other element's box (10px gap; the only allowed intersection is text centered inside its own background shape). ` +
       `Return the full updated slide content in the same schema.`;
   }
 
@@ -835,8 +1092,12 @@ async function generateSlideContent(
   const fixedElements = fixElementDefaults(generatedData.elements, assignedImages, log);
   log.debug(`After element fixing: ${fixedElements.length} elements`);
 
+  // Clamp positions/sizes to canvas bounds, enforce per-type limits, drop overlaps
+  const clampedElements = clampAndValidateSlideElements(fixedElements, assignedImages, log);
+  log.debug(`After clamp/validate: ${clampedElements.length} elements`);
+
   // Process LaTeX elements: render latex string → HTML via KaTeX
-  const latexProcessedElements = processLatexElements(fixedElements, log);
+  const latexProcessedElements = processLatexElements(clampedElements, log);
   log.debug(`After LaTeX processing: ${latexProcessedElements.length} elements`);
 
   // Resolve image_id references to actual URLs
