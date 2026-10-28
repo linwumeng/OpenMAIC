@@ -823,6 +823,7 @@ function HomePage() {
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
                   courseMaterials={courseMaterials.materials}
+                  generationCaps={courseMaterials.generationCaps}
                   onCourseMaterialsAdd={(files) => void addCourseMaterials(files)}
                   onCourseMaterialRemove={removeCourseMaterial}
                   onCourseMaterialRetry={(id) => {

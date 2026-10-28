@@ -35,6 +35,7 @@ import { resolveAgentsForOwner } from '@/lib/server/agents/registry';
 import { resolveClassroomMaterials } from '@/lib/server/classroom-materials';
 import { classroomMediaMimeType } from '@/lib/server/classroom-storage';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { effectiveGenerationCaps } from '@/lib/server/generation/caps';
 import {
   generateAgentProfiles,
   type AgentProfilesInput,
@@ -393,8 +394,12 @@ export const defaultRunStepServices: RunStepServices = {
         images: result.images,
       });
     }
-    const bundle = buildDocumentBundle(parts);
-    const truncated: MaterialTruncation = bundleTruncation(bundle);
+    const caps = effectiveGenerationCaps();
+    const bundle = buildDocumentBundle(parts, {
+      maxChars: caps.maxTextChars,
+      maxVisionImages: caps.maxVisionImages,
+    });
+    const truncated: MaterialTruncation = bundleTruncation(bundle, caps.maxVisionImages);
     return {
       ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
       text: bundle.text,

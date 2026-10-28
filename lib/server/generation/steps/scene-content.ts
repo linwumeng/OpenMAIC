@@ -21,7 +21,7 @@ import type {
   UserRequirements,
 } from '@/lib/types/generation';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
-import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { effectiveGenerationCaps } from '@/lib/server/generation/caps';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 
@@ -90,6 +90,10 @@ export async function generateSceneContent(
 
   // Detect vision capability
   const hasVision = !!modelInfo?.capabilities?.vision;
+  // The deployment's vision-image budget: the step's resolve-with-refill loop,
+  // the generator's defensive re-slice, and the run's bundle all slice at this
+  // same cap so they can never disagree.
+  const { maxVisionImages } = effectiveGenerationCaps();
 
   // Images are resolved and prepared before the generator builds its prompt,
   // so its placeholders and attachments describe the same set. The
@@ -182,7 +186,7 @@ export async function generateSceneContent(
   let visionImageMapping: ImageMapping | undefined = imageMapping;
   let resolvedVisionImages: VisionPromptImage[] | undefined;
   if (assignedImages && assignedImages.length > 0 && hasVision && imageMapping) {
-    const { withSrc } = partitionImagesForVision(assignedImages, imageMapping, MAX_VISION_IMAGES);
+    const { withSrc } = partitionImagesForVision(assignedImages, imageMapping, maxVisionImages);
     // Bound the resolve-with-refill loop (review P2, round 3): the store may
     // be down, and each probe is an unbounded server-side round trip, so an
     // all-fail phase must not churn every candidate (and emit a warn per
@@ -202,7 +206,7 @@ export async function generateSceneContent(
     let consecutiveUnresolvable = 0;
     let stopReason: 'fuse' | 'budget' | null = null;
     for (const candidate of withSrc) {
-      if (resolvedById.size >= MAX_VISION_IMAGES) break;
+      if (resolvedById.size >= maxVisionImages) break;
       if (consecutiveUnresolvable >= MAX_CONSECUTIVE_UNRESOLVABLE_VISION_IMAGES) {
         stopReason = 'fuse';
         break;
@@ -301,6 +305,9 @@ export async function generateSceneContent(
     visionEnabled: hasVision,
     generatedMediaMapping,
     resolvedVisionImages,
+    // The generator's defensive re-slice must use the same budget the step
+    // pre-resolved with, never the package default.
+    maxVisionImages,
     agents,
     languageDirective,
     targetLanguage: input.targetLanguage || undefined,

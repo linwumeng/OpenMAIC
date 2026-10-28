@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 
 import { GET as getCapabilities } from '@/app/api/generate-classroom/capabilities/route';
 import { GET as getHealth } from '@/app/api/health/route';
+import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { WORKBENCH_MATERIAL_MIME_TYPES } from '@/lib/workbench/material-upload-policy';
 import { middleware } from '@/middleware';
@@ -80,6 +81,10 @@ describe('GET /api/generate-classroom/capabilities', () => {
           agentRuntimeConfig.maxUploadBytes,
         ),
         maxMediaBytes: agentRuntimeConfig.maxUploadBytes,
+        generation: {
+          maxTextChars: MAX_PDF_CONTENT_CHARS,
+          maxVisionImages: MAX_VISION_IMAGES,
+        },
       },
     });
     // No extraction service configured (and no ASR for local media): only the

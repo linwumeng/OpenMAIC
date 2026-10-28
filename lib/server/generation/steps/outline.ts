@@ -28,7 +28,7 @@ import {
 } from '@openmaic/generation';
 import type { AgentInfo } from '@openmaic/generation';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from '@openmaic/generation';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { effectiveGenerationCaps } from '@/lib/server/generation/caps';
 import { MAX_OUTLINE_SCENES } from '@/lib/server/generation/outline-schema';
 import { nanoid } from 'nanoid';
 import type {
@@ -363,6 +363,9 @@ async function prepareOutline(
 ): Promise<PreparedOutline> {
   const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents, model } = input;
   const { modelInfo, modelString } = model;
+  // The deployment's generation budgets: the bundle upstream was built with
+  // the same caps, so the slices here must not re-impose the defaults.
+  const { maxTextChars: maxPdfContentChars, maxVisionImages } = effectiveGenerationCaps();
 
   // Build user profile string for language inference context
   const userProfileText =
@@ -389,8 +392,8 @@ async function prepareOutline(
       // Vision mode: split into vision images (first N) and text-only (rest)
       const sortedImages = sortDocumentImagesForVision(pdfImages);
       const allWithSrc = sortedImages.filter((img) => imageMapping[img.id]);
-      const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
-      const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
+      const visionSlice = allWithSrc.slice(0, maxVisionImages);
+      const textOnlySlice = allWithSrc.slice(maxVisionImages);
       const noSrcImages = sortedImages.filter((img) => !imageMapping[img.id]);
 
       // Server-backed transport: `imageMapping` values are allocated asset
@@ -487,6 +490,12 @@ async function prepareOutline(
     videoGenerationEnabled,
     researchContext,
     teacherContext,
+    // The bundle already bounded pdfText to the effective cap; the prompt
+    // builder's own substring and its [see attached] placeholder slice must
+    // apply the same budgets, not the defaults — otherwise the prompt text
+    // would promise fewer attached images than streamOutlines sends.
+    maxPdfContentChars,
+    maxVisionImages,
   });
 
   if (taskEngineMode || interactiveMode) {
@@ -495,7 +504,7 @@ async function prepareOutline(
       : PROMPT_IDS.INTERACTIVE_OUTLINES;
     prompts = buildPrompt(promptId, {
       requirement: requirements.requirement,
-      pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+      pdfContent: pdfText ? pdfText.substring(0, maxPdfContentChars) : 'None',
       availableImages: availableImagesText,
       researchContext: researchContext || 'None',
       hasSourceImages,

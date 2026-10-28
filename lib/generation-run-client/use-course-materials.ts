@@ -117,6 +117,7 @@ function fromServer(entry: CourseMaterialEntry, view: OwnerMaterialView): Course
  */
 export function combinedTruncation(
   entries: readonly CourseMaterialEntry[],
+  caps?: { maxTextChars: number; maxVisionImages: number },
 ): MaterialExtractionView['truncated'] | null {
   const ready = entries.filter((entry) => entry.status === 'ready' && entry.extraction);
   if (ready.length < 2) return null;
@@ -137,16 +138,21 @@ export function combinedTruncation(
         : {}),
       images: [],
     })),
+    // buildDocumentBundle names the text budget `maxChars`; the policy's
+    // generation shape calls it `maxTextChars`. Map it explicitly — passing
+    // the object through would silently fall back to the default budget.
+    { maxChars: caps?.maxTextChars, maxVisionImages: caps?.maxVisionImages },
   );
+  const maxVisionImages = caps?.maxVisionImages ?? MAX_VISION_IMAGES;
   const imageTotal = ready.reduce((sum, entry) => sum + (entry.extraction!.imageCount ?? 0), 0);
   const truncated = {
     ...(bundle.totalRawTextLength > bundle.textContentBudget &&
     !ready.some((entry) => entry.extraction!.truncated?.textChars !== undefined)
       ? { textChars: bundle.textContentBudget }
       : {}),
-    ...(imageTotal > MAX_VISION_IMAGES &&
+    ...(imageTotal > maxVisionImages &&
     !ready.some((entry) => entry.extraction!.truncated?.images)
-      ? { images: { total: imageTotal, max: MAX_VISION_IMAGES } }
+      ? { images: { total: imageTotal, max: maxVisionImages } }
       : {}),
   };
   return Object.keys(truncated).length > 0 ? truncated : null;
@@ -198,6 +204,12 @@ export interface CourseMaterials {
   retry(id: string): void;
   /** Whether every attached material is ready (true when there are none). */
   allReady: boolean;
+  /**
+   * The server's generation input budgets (undefined until the policy
+   * answers, or on a server that does not report them): the truncation
+   * previews are computed with these so they match what a run sends.
+   */
+  generationCaps: { maxTextChars: number; maxVisionImages: number } | undefined;
   /** Hand the ready materials to a run; their server ids, in order. */
   handOff(): string[];
   /** Take back what {@link handOff} handed, when the run did not start. */
@@ -218,6 +230,9 @@ export function useCourseMaterials(): CourseMaterials {
   const files = useRef(new Map<string, File>());
   const handedOff = useRef(new Set<string>());
   const policy = useRef<Promise<MaterialPolicy> | null>(null);
+  const [generationCaps, setGenerationCaps] = useState<
+    { maxTextChars: number; maxVisionImages: number } | undefined
+  >(undefined);
 
   const update = useCallback(
     (id: string, change: (entry: CourseMaterialEntry) => CourseMaterialEntry) => {
@@ -304,7 +319,11 @@ export function useCourseMaterials(): CourseMaterials {
       });
       let refusal: CourseMaterialMessage | null;
       try {
-        refusal = policyRefusal(await policy.current, before, fresh);
+        // The first attach also settles the generation budgets the
+        // truncation previews use (the same cached policy read here).
+        const fetched = await policy.current;
+        setGenerationCaps(fetched.generation);
+        refusal = policyRefusal(fetched, before, fresh);
       } catch (error) {
         withdraw();
         return uploadFailure(error);
@@ -475,6 +494,7 @@ export function useCourseMaterials(): CourseMaterials {
     remove,
     retry,
     allReady,
+    generationCaps,
     handOff,
     takeBack,
     verify: () => reconcile({ handedOffToo: true }),

@@ -29,6 +29,13 @@ export interface OutlinePromptContext {
   videoGenerationEnabled?: boolean;
   researchContext?: string;
   teacherContext?: string;
+  /**
+   * Deployment-overridable budgets. The app passes the caps its document
+   * bundle was built with so the prompt's own substring (and the vision
+   * slice) apply the same budget instead of re-imposing the defaults.
+   */
+  maxPdfContentChars?: number;
+  maxVisionImages?: number;
 }
 
 export interface OutlineGenerationOptions extends Omit<
@@ -54,8 +61,9 @@ function buildAvailableImages(
     if (context.visionEnabled && context.imageMapping) {
       const sortedImages = sortDocumentImagesForVision(pdfImages);
       const allWithSrc = sortedImages.filter((image) => context.imageMapping![image.id]);
-      const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
-      const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
+      const visionCap = context.maxVisionImages ?? MAX_VISION_IMAGES;
+      const visionSlice = allWithSrc.slice(0, visionCap);
+      const textOnlySlice = allWithSrc.slice(visionCap);
       const noSrcImages = sortedImages.filter((image) => !context.imageMapping![image.id]);
 
       const visionDescriptions = visionSlice.map((image) => formatImagePlaceholder(image));
@@ -98,7 +106,9 @@ export function buildOutlinePrompt(
 
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     requirement: requirements.requirement,
-    pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
+    pdfContent: pdfText
+      ? pdfText.substring(0, context.maxPdfContentChars ?? MAX_PDF_CONTENT_CHARS)
+      : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
     hasSourceImages,

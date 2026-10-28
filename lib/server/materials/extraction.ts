@@ -52,7 +52,8 @@ import {
   classifyHostFailure,
   runGenerationExecution,
 } from '@/lib/server/generation-run-hooks/runtime';
-import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
+import { materialAnalysisDeadlineMs } from '@/lib/server/generation/run/deadline';
+import { effectiveGenerationCaps } from '@/lib/server/generation/caps';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { analyzeMaterial } from '@/lib/server/generation/steps/material-analysis';
 import { isTransientExtractionError } from '@/lib/server/material-extraction/errors';
@@ -123,13 +124,14 @@ export function bundleTruncation(
     ReturnType<typeof buildDocumentBundle>,
     'totalRawTextLength' | 'textContentBudget' | 'totalImageCount'
   >,
+  maxVisionImages: number = MAX_VISION_IMAGES,
 ): OwnerMaterialTruncation {
   return {
     ...(bundle.totalRawTextLength > bundle.textContentBudget
       ? { textChars: bundle.textContentBudget }
       : {}),
-    ...(bundle.totalImageCount > MAX_VISION_IMAGES
-      ? { images: { total: bundle.totalImageCount, max: MAX_VISION_IMAGES } }
+    ...(bundle.totalImageCount > maxVisionImages
+      ? { images: { total: bundle.totalImageCount, max: maxVisionImages } }
       : {}),
   };
 }
@@ -289,7 +291,7 @@ export async function extractOwnerMaterial(
     }
   }
 
-  const deadlineMs = dependencies.deadlineMs ?? STEP_DEADLINES_MS.materialAnalysis;
+  const deadlineMs = dependencies.deadlineMs ?? materialAnalysisDeadlineMs();
   const timeout = new AbortController();
   const timer = setTimeout(
     () => timeout.abort(new MaterialExtractionTimeoutError(material.id, deadlineMs)),
@@ -324,22 +326,32 @@ export async function extractOwnerMaterial(
   callSignal.throwIfAborted();
   const result = resultOf(parsed);
   const resultBytes = await store(Buffer.from(JSON.stringify(result), 'utf8'));
-  const alone = buildDocumentBundle([
-    {
-      source: {
-        id: material.id,
-        name: fileName,
-        size: material.bytes,
-        ...(material.mime ? { mimeType: material.mime } : {}),
-        order: 0,
+  const caps = effectiveGenerationCaps();
+  const alone = buildDocumentBundle(
+    [
+      {
+        source: {
+          id: material.id,
+          name: fileName,
+          size: material.bytes,
+          ...(material.mime ? { mimeType: material.mime } : {}),
+          order: 0,
+        },
+        text: result.text,
+        rawTextLength: result.text.length,
+        ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
+        images: result.images,
       },
-      text: result.text,
-      rawTextLength: result.text.length,
-      ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
-      images: result.images,
+    ],
+    {
+      // The notice must describe the budget the run will actually apply, not
+      // the default: an operator who raised the caps must not be told the
+      // material is truncated when it is not.
+      maxChars: caps.maxTextChars,
+      maxVisionImages: caps.maxVisionImages,
     },
-  ]);
-  const truncated = bundleTruncation(alone);
+  );
+  const truncated = bundleTruncation(alone, caps.maxVisionImages);
   return {
     status: 'ready',
     textChars: result.text.length,
@@ -649,7 +661,7 @@ export function startOwnerMaterialExtractor(
  * extraction and settles right after, within its deadline and its lease).
  */
 export function orphanResultAgeMs(): number {
-  return 2 * (STEP_DEADLINES_MS.materialAnalysis + agentRuntimeConfig.leaseTtlMs);
+  return 2 * (materialAnalysisDeadlineMs() + agentRuntimeConfig.leaseTtlMs);
 }
 
 /** Where the orphan sweep goes on from, across passes. */
@@ -726,7 +738,7 @@ export async function awaitOwnerMaterialExtractions(
   signal: AbortSignal | undefined,
   {
     pollMs = 500,
-    deadlineMs = STEP_DEADLINES_MS.materialAnalysis,
+    deadlineMs = materialAnalysisDeadlineMs(),
   }: { pollMs?: number; deadlineMs?: number } = {},
 ): Promise<OwnerMaterialRecord[]> {
   if (records.length === 0) return [];

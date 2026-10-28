@@ -1,8 +1,12 @@
 /** A step's budget: a timeout is a retryable failure; the run's own abort is an abort. */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isAbortError } from '@openmaic/generation';
 
-import { StepTimeoutError, withDeadline } from '@/lib/server/generation/run/deadline';
+import {
+  materialAnalysisDeadlineMs,
+  StepTimeoutError,
+  withDeadline,
+} from '@/lib/server/generation/run/deadline';
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
 
 describe('step deadlines', () => {
@@ -55,5 +59,38 @@ describe('step deadlines', () => {
     );
     expect(result).toBe('ok');
     expect(causes).toEqual(['StepTimeoutError: step did not finish within 0.01 s']);
+  });
+});
+
+describe('materialAnalysisDeadlineMs', () => {
+  // The default test asserts the unset state; a shell exporting the override
+  // (the knob this diff ships for slow-OCR deployments) must not leak in.
+  beforeEach(() => {
+    delete process.env.MATERIAL_ANALYSIS_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('defaults to the step deadline when the variable is unset', () => {
+    expect(materialAnalysisDeadlineMs()).toBe(300_000);
+  });
+
+  it('reads MATERIAL_ANALYSIS_TIMEOUT_MS for slow OCR deployments', () => {
+    vi.stubEnv('MATERIAL_ANALYSIS_TIMEOUT_MS', '7200000');
+    expect(materialAnalysisDeadlineMs()).toBe(7_200_000);
+  });
+
+  it('ignores non-numeric, zero and negative values', () => {
+    for (const value of ['soon', '0', '-5', '  ']) {
+      vi.stubEnv('MATERIAL_ANALYSIS_TIMEOUT_MS', value);
+      expect(materialAnalysisDeadlineMs()).toBe(300_000);
+    }
+  });
+
+  it('clamps an above-setTimeout-limit override instead of letting Node turn it into 1 ms', () => {
+    vi.stubEnv('MATERIAL_ANALYSIS_TIMEOUT_MS', '5000000000');
+    expect(materialAnalysisDeadlineMs()).toBe(2_147_483_647);
   });
 });

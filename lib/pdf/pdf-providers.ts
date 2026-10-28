@@ -147,6 +147,7 @@ import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithAliDocMindClient } from './alidocmind-client';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
+import { materialAnalysisDeadlineMs } from '@/lib/server/generation/run/deadline';
 
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
@@ -196,7 +197,17 @@ export function describeSelfHostedMinerUError(status: number, rawBody: string): 
 // the strict transport pins the connect address to the vetted DNS answers and
 // refuses a 3xx instead of following it.
 function selfHostedMinerUPolicy(managed: boolean | undefined): ProviderFetchPolicy {
-  return { allowLocalNetworks: managed ? true : undefined, rejectRedirects: true };
+  // /file_parse answers only after the whole parse, and CPU OCR of a scanned
+  // document can run far past undici's 300 s default headers timeout. Cap the
+  // transport at the extraction budget instead; the caller's signal still
+  // bounds the wait itself.
+  const deadline = materialAnalysisDeadlineMs();
+  return {
+    allowLocalNetworks: managed ? true : undefined,
+    rejectRedirects: true,
+    headersTimeout: deadline,
+    bodyTimeout: deadline,
+  };
 }
 
 const SELF_HOSTED_MINERU_CONNECTION_FAILED =

@@ -20,6 +20,7 @@ import {
   MAX_CLASSROOM_MATERIALS,
 } from '@/lib/server/classroom-materials';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { effectiveGenerationCaps } from '@/lib/server/generation/caps';
 import { resolveExtractableMimeTypes } from '@/lib/server/material-extraction/availability';
 import {
   MATERIAL_DOCUMENT_UPLOAD_LIMIT,
@@ -53,6 +54,9 @@ export async function GET(req: NextRequest) {
       maxTotalBytes: MAX_CLASSROOM_MATERIAL_TOTAL_BYTES,
       maxDocumentBytes: MATERIAL_DOCUMENT_UPLOAD_LIMIT,
       maxMediaBytes: MATERIAL_MEDIA_UPLOAD_LIMIT,
+      // What a generation actually reads of those materials, so the client's
+      // truncation previews match the run's real budgets.
+      generation: effectiveGenerationCaps(),
     },
   });
 }

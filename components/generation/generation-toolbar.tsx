@@ -100,6 +100,11 @@ export interface GenerationToolbarProps {
    */
   materialsLocked?: boolean;
   /**
+   * The server's generation input budgets, for the combined-truncation
+   * preview; undefined falls back to the built-in defaults (older servers).
+   */
+  generationCaps?: { maxTextChars: number; maxVisionImages: number };
+  /**
    * Open the settings dialog at a section. Backs the "Set up model" CTA shown
    * when no usable LLM provider exists (#580: the homepage must never dead-end).
    */
@@ -114,6 +119,7 @@ export function GenerationToolbar({
   onCourseMaterialRetry,
   onPdfError,
   materialsLocked = false,
+  generationCaps,
   onSettingsOpen,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
@@ -247,8 +253,9 @@ export function GenerationToolbar({
 
   // What the ready materials leave out together, beyond what each does alone.
   const combined = useMemo(
-    () => combinedTruncation([...courseMaterials].sort((a, b) => a.order - b.order)),
-    [courseMaterials],
+    () =>
+      combinedTruncation([...courseMaterials].sort((a, b) => a.order - b.order), generationCaps),
+    [courseMaterials, generationCaps],
   );
 
   // ─── Pill button helper ─────────────────────────────

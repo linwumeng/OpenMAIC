@@ -165,6 +165,13 @@ export interface MaterialPolicy {
   /** The per-file caps of documents (and images), and of audio and video. */
   maxDocumentBytes: number;
   maxMediaBytes: number;
+  /**
+   * The generation input budgets the server actually applies (env-overridable;
+   * absent on older servers — previews then fall back to the built-in
+   * defaults). The truncation notices are computed with these so they never
+   * disagree with what the run sends.
+   */
+  generation?: { maxTextChars: number; maxVisionImages: number };
 }
 
 export async function fetchMaterialPolicy(): Promise<MaterialPolicy> {

@@ -35,6 +35,22 @@ export class StepTimeoutError extends Error {
 }
 
 /**
+ * One material's extraction budget, overridable via
+ * `MATERIAL_ANALYSIS_TIMEOUT_MS` (ms). The 5-minute default matches the other
+ * provider steps, but a self-hosted OCR backend (MinerU on CPU) needs far
+ * more: scanned pages run ~10 s each, so a few hundred pages take tens of
+ * minutes and always blow the default — raise it for such deployments.
+ */
+export function materialAnalysisDeadlineMs(): number {
+  const raw = process.env.MATERIAL_ANALYSIS_TIMEOUT_MS?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return STEP_DEADLINES_MS.materialAnalysis;
+  // Node coerces a setTimeout delay above 2^31-1 ms to 1 ms, which would
+  // invert an "effectively unlimited" override into an instant abort.
+  return Math.min(parsed, 2_147_483_647);
+}
+
+/**
  * Run `call` with a signal that aborts when the run's signal does (a lost
  * lease, a deleted course, shutdown) or when `ms` pass. A timeout rejects
  * with {@link StepTimeoutError} even if the call ignores its signal; the
