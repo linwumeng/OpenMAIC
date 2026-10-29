@@ -89,7 +89,7 @@ import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { DEFAULT_WEB_SEARCH_PROVIDER_ID } from '@/lib/web-search/constants';
 import { resolveWebSearchConnection } from '@/lib/server/web-search-config';
 
-import { STEP_DEADLINES_MS } from './deadline';
+import { materialAnalysisDeadlineMs } from './deadline';
 import { ownerAssetExists } from './media';
 import type { RunNarrationTarget } from './narration-voice';
 
@@ -385,7 +385,7 @@ export const defaultRunStepServices: RunStepServices = {
     const linkedImagesDeadline = new AbortController();
     const linkedImagesTimer = setTimeout(
       () => linkedImagesDeadline.abort(new Error('linked image downloads ran out of time')),
-      STEP_DEADLINES_MS.materialAnalysis,
+      materialAnalysisDeadlineMs(),
     );
     linkedImagesTimer.unref?.();
     try {
