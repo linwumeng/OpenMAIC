@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  createInteractiveMediaSession,
+  mediaDocumentId,
+  MEDIA_CONTROL,
+} from '@/lib/interactive/media-bridge';
 import { createObservationSession } from '@/lib/interactive/observation-bridge';
 import { createPortal } from 'react-dom';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
@@ -142,10 +147,12 @@ export function handleInteractivePickerMessage(
  * zero-reload return.
  */
 export function InteractiveIframeHost({
+  onMediaPlay,
   playbackPicker,
   onPlaybackPick,
   onPlaybackCancel,
 }: {
+  readonly onMediaPlay?: () => void;
   readonly playbackPicker?: PlaybackInteractivePickerState | null;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
   readonly onPlaybackCancel?: () => void;
@@ -184,6 +191,7 @@ export function InteractiveIframeHost({
       {Object.entries(entries).map(([sceneId, entry]) => (
         <PooledIframe
           key={sceneId}
+          onMediaPlay={onMediaPlay}
           sceneId={sceneId}
           entry={entry}
           visible={entry.owner !== null && sceneId === activeSceneId}
@@ -201,6 +209,7 @@ export function InteractiveIframeHost({
 }
 
 interface PooledIframeProps {
+  readonly onMediaPlay?: () => void;
   readonly sceneId: string;
   readonly entry: IframePoolEntry;
   readonly visible: boolean;
@@ -228,6 +237,7 @@ interface PooledIframeProps {
  * targetOrigin='*'.
  */
 function PooledIframe({
+  onMediaPlay,
   sceneId,
   entry,
   visible,
@@ -238,6 +248,19 @@ function PooledIframe({
 }: PooledIframeProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const mediaSession = useRef<ReturnType<typeof createInteractiveMediaSession> | null>(null);
+  const mediaId = mediaDocumentId(entry.srcDoc);
+  useLayoutEffect(() => {
+    if (!iframeRef.current || !mediaId || !visible) return;
+    const session = createInteractiveMediaSession(iframeRef.current, mediaId, () =>
+      onMediaPlay?.(),
+    );
+    mediaSession.current = session;
+    return () => {
+      session.dispose();
+      mediaSession.current = null;
+    };
+  }, [mediaId, onMediaPlay, visible]);
   const runtimeErrors = useSceneRuntimeErrors((state) => state.errors[sceneId]);
   const runtimeErrorSignature = runtimeErrors?.join('\n') ?? '';
   const [dismissedRuntimeSignature, setDismissedRuntimeSignature] = useState<string | null>(null);
@@ -317,6 +340,10 @@ function PooledIframe({
   // the callback reads contentWindow lazily at send time.
   useLayoutEffect(() => {
     const send = (type: string, payload: Record<string, unknown>) => {
+      if (type === MEDIA_CONTROL) {
+        mediaSession.current?.pause();
+        return;
+      }
       iframeRef.current?.contentWindow?.postMessage({ type, ...payload }, '*');
     };
     return registerIframe(sceneId, send, documentToken);
